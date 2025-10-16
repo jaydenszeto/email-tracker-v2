@@ -10,15 +10,13 @@ import pytz
 app = Flask(__name__)
 CORS(app) # Enable Cross-Origin Resource Sharing
 
-# --- In-memory database ---
-# In a real-world application, you would use a proper database like PostgreSQL or Redis.
-# For this example, we'll use a simple dictionary to store tracking data.
-# The structure will be: { "tracking_id": {"campaign": "campaign_name", "events": []} }
+# --- In-memory database (for simplicity) ---
+# This dictionary will store our tracking data.
+# In a production app, you would use a real database.
 tracked_emails = {}
 
 # --- The Tracking Pixel ---
-# This is a 1x1 transparent GIF. It's tiny and won't be visible in the email.
-# We decode it from base64 to serve it directly from memory.
+# This is a base64 encoded, 1x1 transparent GIF.
 PIXEL_GIF_B64 = "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="
 PIXEL_GIF_DATA = base64.b64decode(PIXEL_GIF_B64)
 
@@ -37,14 +35,13 @@ def generate_pixel():
     campaign = request.json.get('campaign', 'Untitled Campaign')
     tracking_id = str(uuid.uuid4())
     
-    # Store the new tracking ID and campaign name
+    # Store the new campaign and ID
     tracked_emails[tracking_id] = {
         "campaign": campaign,
         "events": []
     }
     
-    # The full URL for the tracking pixel
-    # In production on Render, request.host_url will be your live URL
+    # The public URL for the pixel
     tracking_url = f"{request.host_url}track/{tracking_id}"
     
     return jsonify({
@@ -57,7 +54,6 @@ def generate_pixel():
 def track_email(tracking_id):
     """This is the endpoint the email client hits. It logs the 'open' and serves the pixel."""
     if tracking_id in tracked_emails:
-        # --- Log the open event ---
         event_data = {
             'ip_address': request.headers.get('X-Forwarded-For', request.remote_addr),
             'user_agent': request.headers.get('User-Agent'),
@@ -66,8 +62,7 @@ def track_email(tracking_id):
         tracked_emails[tracking_id]['events'].append(event_data)
         print(f"Tracked open for ID: {tracking_id} from IP: {event_data['ip_address']}")
 
-    # --- Serve the 1x1 transparent GIF ---
-    # We serve the raw image data directly.
+    # Serve the invisible GIF
     return send_file(
         io.BytesIO(PIXEL_GIF_DATA),
         mimetype='image/gif',
@@ -78,8 +73,8 @@ def track_email(tracking_id):
 @app.route('/events')
 def get_events():
     """API endpoint for the frontend to fetch all tracking data."""
-    # We'll format the data to be easily displayed in a table.
     all_events = []
+    # Collect all events from all campaigns
     for track_id, data in tracked_emails.items():
         for event in data['events']:
             all_events.append({
@@ -90,12 +85,11 @@ def get_events():
                 'user_agent': event['user_agent']
             })
             
-    # Sort events by timestamp, most recent first
+    # Sort events by timestamp, newest first
     sorted_events = sorted(all_events, key=lambda x: datetime.strptime(x['timestamp'], '%Y-%m-%d %I:%M:%S %p %Z'), reverse=True)
     
     return jsonify(sorted_events)
 
-# This is necessary for Render's health checks and to run the app
 if __name__ == '__main__':
-    # The host must be '0.0.0.0' to be accessible within Render's container
+    # host='0.0.0.0' makes it accessible on your network and is required for Render
     app.run(host='0.0.0.0', port=5000)
