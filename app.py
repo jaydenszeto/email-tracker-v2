@@ -6,23 +6,20 @@ from flask_cors import CORS
 import io
 import pytz
 
-# Initialize the Flask app
 app = Flask(__name__)
-CORS(app) # Enable Cross-Origin Resource Sharing
+CORS(app)
 
-# --- In-memory database (for simplicity) ---
-# This dictionary will store our tracking data.
-# In a production app, you would use a real database.
 tracked_emails = {}
 
-# --- The Tracking Pixel ---
-# This is a base64 encoded, 1x1 transparent GIF.
 PIXEL_GIF_B64 = "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="
 PIXEL_GIF_DATA = base64.b64decode(PIXEL_GIF_B64)
 
+# THE FIX IS HERE: Removed the %Z from the format string
+TIME_FORMAT = '%Y-%m-%d %I:%M:%S %p'
+
 def get_current_time():
     """Returns the current time in US/Pacific timezone for consistency."""
-    return datetime.now(pytz.timezone('US/Pacific')).strftime('%Y-%m-%d %I:%M:%S %p %Z')
+    return datetime.now(pytz.timezone('US/Pacific')).strftime(TIME_FORMAT)
 
 @app.route('/')
 def index():
@@ -35,13 +32,11 @@ def generate_pixel():
     campaign = request.json.get('campaign', 'Untitled Campaign')
     tracking_id = str(uuid.uuid4())
     
-    # Store the new campaign and ID
     tracked_emails[tracking_id] = {
         "campaign": campaign,
         "events": []
     }
     
-    # The public URL for the pixel
     tracking_url = f"{request.host_url}track/{tracking_id}"
     
     return jsonify({
@@ -62,7 +57,6 @@ def track_email(tracking_id):
         tracked_emails[tracking_id]['events'].append(event_data)
         print(f"Tracked open for ID: {tracking_id} from IP: {event_data['ip_address']}")
 
-    # Serve the invisible GIF
     return send_file(
         io.BytesIO(PIXEL_GIF_DATA),
         mimetype='image/gif',
@@ -74,7 +68,6 @@ def track_email(tracking_id):
 def get_events():
     """API endpoint for the frontend to fetch all tracking data."""
     all_events = []
-    # Collect all events from all campaigns
     for track_id, data in tracked_emails.items():
         for event in data['events']:
             all_events.append({
@@ -84,12 +77,11 @@ def get_events():
                 'ip_address': event['ip_address'],
                 'user_agent': event['user_agent']
             })
-            
-    # Sort events by timestamp, newest first
-    sorted_events = sorted(all_events, key=lambda x: datetime.strptime(x['timestamp'], '%Y-%m-%d %I:%M:%S %p %Z'), reverse=True)
+    
+    # THE FIX IS HERE: Use the new TIME_FORMAT for sorting
+    sorted_events = sorted(all_events, key=lambda x: datetime.strptime(x['timestamp'], TIME_FORMAT), reverse=True)
     
     return jsonify(sorted_events)
 
 if __name__ == '__main__':
-    # host='0.0.0.0' makes it accessible on your network and is required for Render
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=10000)
